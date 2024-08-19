@@ -1,18 +1,18 @@
 /*
--strong-synth-effect.scd-
+-strong-synth-generator.scd-
 
 Setup: Use thisProcess.interpreter().compileFile(path).value() to load the function into
 a variable.
 
-Description: An effect inspired by the Karplus-Strong synthesis algorithm. Converts a buffer
-into an array of floating point numbers representing each frame of the buffer. Frames are then divided
+Description: Generates a buffer from a predefined array of floating point numbers. Array indices are divided
 into segments of a specified length. The function adds each segment to the value of the following segment.
-This process is repeated a specified number of iterations. The resulting array is scaled and converted back into
+This process is repeated a specified number of iterations. The resulting array is scaled and converted into
 a buffer.
 
 Arguments:
--- sourceBuf: Buffer provided by the user. The function manipulates this buffer and returns the result.
+-- oscType: Tupe of oscillator to initialize the float array to.
 -- numChannels: Number of channels of the signal provided.
+-- numSeconds: The number of seconds to make the final buffer.
 -- segmentLength: The length of each segment of frames.
 -- numIterations: Number of times to repeat the proccess of adding segments together.
 -- frameMul: Value by which to scale the amplitude of added segments.
@@ -23,14 +23,30 @@ and the buffer will be accessable at the event key retVal.
 */
 (
 {
-	arg sourceBuf, numChannels, segmentLength = 500, numIterations = 10, frameMul = 0.5;
+	arg oscType, numChannels, numSeconds, segmentLength = 500, numIterations = 10, frameMul = 0.5;
 	var bufArray, maxFrame, retVar = ();
 
 	Routine.new({
 
-		// Load the buffer into an array of floats and wait for completion.
-		sourceBuf.loadToFloatArray(action: { arg output; bufArray = output; });
-		s.sync();
+		// Sine oscillator locked at A 440.
+		if(oscType == \sine,
+
+			{ var numFrames = s.sampleRate() * numSeconds;
+				bufArray = Array.fill(numFrames, { arg index; ((1 / numFrames) * index * 880pi).sin().abs() } ); }
+		);
+
+		// Pink noise like oscillator.
+		if(oscType == \pink,
+			{ bufArray = Array.exprand(s.sampleRate() * numSeconds, 0.00001, 1.0); }
+		);
+
+		// White noise oscillator is created by default.
+		if(bufArray == nil,
+			{ bufArray = Array.rand(s.sampleRate() * numSeconds, 0.0, 1.0); }
+		);
+
+		// Buffer is laced with itself up to the number of channels.
+		bufArray = Array.fill(numChannels, { bufArray }).lace;
 
 		// Reverse the contents of the array. This makes visualization of the process easier.
 		bufArray = bufArray.reverse();
@@ -70,10 +86,11 @@ and the buffer will be accessable at the event key retVal.
 		// Convert float array to buffer and store result in return event.
 		Buffer.loadCollection(s, bufArray, numChannels, { arg buf;
 
+
 			retVar[\retVal] = buf;
 			retVar[\cond].test = true;
 			retVar[\cond].signal();
-			"strong-synth-effect.scd - Buffer stored at event key retVal.".postln();
+			"strong-synth-generator.scd - Buffer stored at event key retVal.".postln();
 		});
 		s.sync();
 	}).play();
