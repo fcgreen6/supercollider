@@ -10,7 +10,8 @@ This process is repeated a specified number of iterations. The resulting array i
 a buffer.
 
 Arguments:
--- oscType: Tupe of oscillator to initialize the float array to.
+-- oscType: Tupe of oscillator to initialize the float array to. \sine = sine wave. \pink = pink noise.
+-- Anything else is initialised to white noise.
 -- numChannels: Number of channels of the signal provided.
 -- numSeconds: The number of seconds to make the final buffer.
 -- segmentLength: The length of each segment of frames.
