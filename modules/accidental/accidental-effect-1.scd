@@ -1,21 +1,20 @@
 /*
--strong-synth-effect.scd-
+-accidental-effect-1.scd-
 
 Setup: Use thisProcess.interpreter().compileFile(path).value() to load the function into
 a variable.
 
-Description: An effect inspired by the Karplus-Strong synthesis algorithm. Converts a buffer
-into an array of floating point numbers representing each frame of the buffer. Frames are then divided
-into segments of a specified length. The function adds each segment to the value of the following segment.
-This process is repeated a specified number of iterations. The resulting array is scaled and converted back into
-a buffer.
+Description: Accidental effect created when experementing with Karplus-Strong synthesis.
+The function accepts a buffer from the user and returns a new effected buffer within an
+event variable. This module can be used to create a bitcrush like effect when arguments
+are adjusted accordingly.
 
 Arguments:
 -- sourceBuf: Buffer provided by the user. The function manipulates this buffer and returns the result.
 -- numChannels: Number of channels of the signal provided.
--- segmentLength: The length of each segment of frames.
--- numIterations: Number of times to repeat the proccess of adding segments together.
--- frameMul: Value by which to scale the amplitude of added segments.
+-- segmentLength: Since the algorithm is faulty, not sure what exactly this does... Experement to create unpredictable sounds!
+-- numIterations: Number of times to repeat the algorithm.
+-- frameMul: Value by which to scale the amplitude of manipulated frames within the algorithm.
 
 Return: This function executes asynchronously. Beacuse of this, an event is returned, and not the resulting
 buffer itself. When the function is finished, the event's condition (stored at event key cond) is signaled
@@ -24,7 +23,7 @@ and the buffer will be accessable at the event key retVal.
 (
 {
 	arg sourceBuf, numChannels, segmentLength = 500, numIterations = 10, frameMul = 0.5;
-	var bufArray, maxFrame, retVar = ();
+	var loopIteration = 0, previousL = 0, previousR = 0, bufArray, maxFrame, retVar = ();
 
 	Routine.new({
 
@@ -34,22 +33,26 @@ and the buffer will be accessable at the event key retVal.
 		sourceBuf.loadToFloatArray(action: { arg output; bufArray = output; });
 		s.sync();
 
-		// Do the process for the specified number of iterations.
+		// Reverse the contents of the array. This makes visualization of the process easier.
+		bufArray = bufArray.reverse();
+
+		// Faulty algorithm made when experementing with Karplus-Strong synthesis...
 		numIterations.do({
 
-			bufArray = bufArray.reverse();
+			bufArray = bufArray.collect({
 
-			for(0, bufArray.size() - 1, {
+				arg frame, index;
 
-				// The first segment is not effected since there is no segment preceding it.
-				// This if statement begins adding segments after the first segment.
-				arg iteration;
-				if(iteration >= (segmentLength * numChannels),
-
-					{ bufArray.put(iteration, bufArray[iteration] + (bufArray[iteration - (segmentLength * numChannels)] * frameMul)); }
+				if((index % (segmentLength * numChannels)) == loopIteration,
+					{ previousL = (previousL * frameMul) + frame; },
+					{ previousR = (previousR * frameMul) + frame; }
 				);
 			});
+
+			loopIteration = loopIteration + 1;
 		});
+
+		bufArray = bufArray.reverse();
 
 		// Since segments have been repeatedly added together, the float array must be rescalled.
 		maxFrame = bufArray[0];
@@ -72,7 +75,7 @@ and the buffer will be accessable at the event key retVal.
 			retVar[\retVal] = buf;
 			retVar[\cond].test = true;
 			retVar[\cond].signal();
-			"strong-synth-effect.scd - Buffer stored at event key retVal.".postln();
+			"accidental-effect-1.scd - Buffer stored at event key retVal.".postln();
 		});
 		s.sync();
 	}).play();
