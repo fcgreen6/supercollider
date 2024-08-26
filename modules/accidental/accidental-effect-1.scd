@@ -27,8 +27,6 @@ and the buffer will be accessable at the event key retVal.
 
 	Routine.new({
 
-		sourceBuf.postln;
-		numChannels.postln;
 		// Load the buffer into an array of floats and wait for completion.
 		sourceBuf.loadToFloatArray(action: { arg output; bufArray = output; });
 		s.sync();
