@@ -4,6 +4,9 @@ ServerTree.removeAll();
 ServerQuit.removeAll();
 ServerQuit.add({ ServerTree.removeAll(); ServerQuit.removeAll(); });
 
+// Clear the node tree.
+CmdPeriod.run();
+
 ~scPath = PathName(thisProcess.nowExecutingPath()).parentPath(); // Compositions folder...
 ~scPath = PathName(~scPath).parentPath(); // SuperColider development folder...
 
@@ -15,7 +18,7 @@ ServerQuit.add({ ServerTree.removeAll(); ServerQuit.removeAll(); });
 ~strongSynthFx = thisProcess.interpreter().compileFile(~modulePath ++ "strong/strong-synth-effect.scd").value();
 ~strongSynthRev = thisProcess.interpreter().compileFile(~modulePath ++ "strong/variations/strong-reverse-iterations.scd").value();
 ~strongSynthAccidental = thisProcess.interpreter().compileFile(~modulePath ++ "accidental/accidental-effect-1.scd").value();
-
+~player = thisProcess.interpreter().compileFile(~modulePath ++ "sequencing/function-sequence-player.scd").value();
 // Create busses...
 
 s.waitForBoot({
@@ -36,6 +39,8 @@ s.waitForBoot({
 	~synthSamples = ~synthSamples.add(Buffer.read(s, ~samplePath ++ "synth2.wav"));
 	~synthSamples = ~synthSamples.add(Buffer.read(s, ~samplePath ++ "synth3.wav"));
 	~synthSamples = ~synthSamples.add(Buffer.read(s, ~samplePath ++ "synth4.wav"));
+
+	~synthLoop = Buffer.read(s, ~samplePath ++ "synthloop.wav");
 
 	s.sync();
 
@@ -64,19 +69,11 @@ s.waitForBoot({
 		retVar;
 	};
 
-	~bassFx = ();
-	~bassFx[\value] = Array.new(4);
+	~sampleBlend1 = ();
+	~sampleBlend1[\value] = Array.new(5);
 
-	~applyModules.value(~bassSamples[2], 2, 1000, 30, 0.5, nil, ~strongSynthFx, ~bassFx)[\cond].wait();
-	~applyModules.value(~bassSamples[2], 2, 500, 60, 0.5, nil, ~strongSynthFx, ~bassFx)[\cond].wait();
-	~applyModules.value(~bassSamples[2], 2, 250, 120, 0.5, nil, ~strongSynthFx, ~bassFx)[\cond].wait();
-
-	~bassFx2 = ();
-	~bassFx2[\value] = Array.new(4);
-
-	~applyModules.value(~bassFx[\value][0], 2, 68, 74, 0.4, nil, ~strongSynthRev, ~bassFx2)[\cond].wait();
-	~applyModules.value(~bassFx[\value][1], 2, 68, 74, 0.4, nil, ~strongSynthRev, ~bassFx2)[\cond].wait();
-	~applyModules.value(~bassFx[\value][2], 2, 68, 74, 0.4, nil, ~strongSynthRev, ~bassFx2)[\cond].wait();
+	~applyModules.value(~synthSamples[0], 2, 50, 50, 0.5, nil, ~strongSynthFx, ~sampleBlend1)[\cond].wait();
+	~applyModules.value(~synthSamples[0], 2, 100, 100, 0.5, nil, ~strongSynthRev, ~sampleBlend1)[\cond].wait();
 
 	ServerTree.add({
 
@@ -87,6 +84,28 @@ s.waitForBoot({
 });
 )
 
+(
+var bpm, beat;
+bpm = 105;
+beat = 60/bpm;
 
-~bassFx[\value][2].play;
-~bassFx2[\value][1].play;
+~loop = {
+
+	arg repetitions = 1;
+
+	Routine({
+
+		repetitions.do({
+
+			~synthLoop.play();
+			(beat * 8).wait();
+		});
+	}).play();
+};
+
+~sequence = [\, \, \, \, \, \, \, \];
+~sequence[0] = { ~sampleBlend1[\value][0].play(); ~loop.value(1); };
+~sequence[4] = [{ ~sampleBlend1[\value][0].play(); }, { ~sampleBlend1[\value][1].play() }];
+
+~player.value(~sequence, beat, true);
+)
