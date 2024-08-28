@@ -1,5 +1,5 @@
 /*
--function-sequence-generator.scd-
+-function-sequence-player.scd-
 
 Setup: Use thisProcess.interpreter().compileFile(path).value() to load the function into
 a variable.
