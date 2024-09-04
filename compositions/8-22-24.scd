@@ -25,6 +25,8 @@ CmdPeriod.run();
 ~player = thisProcess.interpreter().compileFile(~modulePath ++ "sequencing/function-sequence-player.scd").value();
 
 // Create busses here...
+s.newBusAllocators();
+~mainSynthBus = Bus.audio(s, 2);
 
 s.waitForBoot({
 
@@ -49,7 +51,9 @@ s.waitForBoot({
 	~synthSamples = ~synthSamples.add(Buffer.read(s, ~samplePath ++ "synth4.wav"));
 
 	// Load synth loop...
-	~synthLoop = Buffer.read(s, ~samplePath ++ "synthloop.wav");
+	~synthLoops = Array(2);
+	~synthLoops = ~synthLoops.add(Buffer.read(s, ~samplePath ++ "synthloop.wav"));
+	~synthLoops = ~synthLoops.add(Buffer.read(s, ~samplePath ++ "synthloop2.wav"));
 
 	// Wait for buffer creation...
 	s.sync();
@@ -82,125 +86,206 @@ s.waitForBoot({
 
 	// Event for colecting variations on the synth loop.
 	~synthLoopVariations = ();
-	~synthLoopVariations[\value] = Array.new(4);
+	~synthLoopVariations[\value] = Array.new(2);
 
 	// Create some variations on the synth loop and store them in ~synthLoopVariations as an array.
-	~applyModules.value(~synthLoop, 2, 1000, 10, 0.5, nil, ~strongSynthFx, ~synthLoopVariations)[\cond].wait();
-	~applyModules.value(~synthLoop, 2, 2000, 5, 0.7, nil, ~strongSynthFx, ~synthLoopVariations)[\cond].wait();
-	~applyModules.value(~synthLoop, 2, 4000, 10, 0.5, nil, ~strongSynthFx, ~synthLoopVariations)[\cond].wait();
-	~applyModules.value(~synthLoop, 2, 400, 12, 0.8, nil, ~strongSynthRev, ~synthLoopVariations)[\cond].wait();
+	~applyModules.value(~synthLoops[0], 2, 500, 6, 0.87, nil, ~strongSynthRev, ~synthLoopVariations)[\cond].wait();
+	~applyModules.value(~synthLoops[1], 2, 13000, 100, 0.07, nil, ~strongSynthFx, ~synthLoopVariations)[\cond].wait();
 	~synthLoopVariations = ~synthLoopVariations[\value];
+
+	// Event for collecting layers of the main bass.
+	~mainBassLayers = ();
+	~mainBassLayers[\value] = Array.new(3);
+
+	// Generate a synth to use for a bass layer.
+	~strongBassStarter = ~strongSynthGen.value(\pink, 2, 1.0, s.sampleRate() / 110, 100, 0.5);
+	~strongBassStarter[\cond].wait();
+	~strongBassStarter = ~strongBassStarter[\retVal];
+
+	// Create some layers for the bass and store them in ~mainBassLayers. ~strongBassStarter is freed after use.
+	~applyModules.value(~pianoSamples[3], 2, s.sampleRate() / 55, 100, 0.25, nil, ~strongSynthRev, ~mainBassLayers)[\cond].wait();
+	~applyModules.value(~bassSamples[0], 2, s.sampleRate() / 110, 100, 0.5, nil, ~strongSynthRev, ~mainBassLayers)[\cond].wait();
+	~applyModules.value(~strongBassStarter, 2, s.sampleRate() / 110 + 1, 101, 0.5, nil, ~strongSynthRev, ~mainBassLayers)[\cond].wait();
+	~mainBassLayers = ~mainBassLayers[\value];
+	~strongBassStarter.free();
+
+	~bassFills = ();
+	~bassfills[\value] = Array.new(10);
+
+	~applyModules.value(~bassSamples[2], 2, s.sampleRate() / 84, 5, 0.4, nil, ~strongSynthRev, ~bassFills)[\cond].wait();
+
+	SynthDef(\mainSynthBus, {
+
+		var signal;
+		signal = In.ar(~mainSynthBus, 2);
+
+		Out.ar(0, signal);
+	}).add();
+
+	s.sync();
 
 	// Create new groups afer ctrl period is pressed...
 	ServerTree.add({
 
 		~mainGroup = Group.new();
 		~fxGroup = Group.new(~mainGroup, \addAfter);
+
+		Synth(\mainSynthBus, target: ~fxGroup);
 	});
 	ServerTree.run();
 });
 )
 
 // Test Code...
-// Created a function compatable with the function player which plays the synth loop
-// a specified number of times. On the last repetion, the user can choose one of four
-// fills.
 (
-SynthDef(\synthLoopPlay, {
+SynthDef(\synthLoop, {
 
 	arg gate = 1;
 	var signal;
 
-	signal = PlayBuf.ar(2, ~synthLoop, 1.0, doneAction: 2);
+	signal = PlayBuf.ar(2, ~synthLoops[1], 1.0, doneAction: 2) * 4.dbamp();
 
 	signal = signal * EnvGen.ar(
 		Env.new(
-			[1, 0, 1],
-			[~synthLoop.duration() - ~beat, ~beat / 2],
-			[6, -6],
-			0
+			[1, 1, 0],
+			[~beat / 2, ~synthLoops[1].duration() - ~beat],
+			[0, 3.5],
+			1
 		),
 		gate,
 		doneAction: 2
 	);
 
+	Out.ar(~mainSynthBus, signal);
+}).add();
+
+SynthDef(\loopVariation1, {
+
+	var signal;
+
+	signal = PlayBuf.ar(2, ~synthLoopVariations[0], doneAction: 2) * (-2.dbamp());
+
 	signal = signal * EnvGen.ar(
 		Env.new(
-			[0, 1, 1, 0],
-			[0.05, ~synthLoop.duration() - 0.10, 0.05]
+			[0, 0,  1],
+			[~beat * 4, ~synthLoopVariations[0].duration() - (~beat * 4)],
+			[0, 4.5],
 		)
 	);
 
-	Out.ar(0, signal);
+	Out.ar(~mainSynthBus, signal);
 }).add();
 
-SynthDef(\loopVariationPlay, {
+SynthDef(\loopVariation2, {
 
-	arg gate1 = 1, gate2 = 1, gate3 = 1, gate4 = 1;
-	var signal1, signal2, signal3, signal4;
+	var signal;
 
-	signal1 = PlayBuf.ar(2, ~synthLoopVariations[0], 1.0, doneAction: 2);
-	signal2 = PlayBuf.ar(2, ~synthLoopVariations[1], 1.0, doneAction: 2);
-	signal3 = PlayBuf.ar(2, ~synthLoopVariations[2], 1.0, doneAction: 2);
-	signal4 = PlayBuf.ar(2, ~synthLoopVariations[3], 1.0, doneAction: 2);
+	signal = PlayBuf.ar(2, ~synthLoopVariations[1], doneAction: 2) * (30.dbamp());
+
+	signal = signal * EnvGen.ar(
+		Env.new(
+			[0, 0,  1],
+			[~beat * 4, ~synthLoopVariations[1].duration() - (~beat * 4)],
+			[0, 10],
+		)
+	);
+
+	signal = Balance2.ar(signal[0], signal[1], SinOsc.ar(s.sampleRate() / 13000).bipolar(0.4));
+
+	Out.ar(~mainSynthBus, signal);
+}).add();
+
+SynthDef(\bassLayer1, {
+
+	var signal1, signal2;
+
+	signal1 = PlayBuf.ar(2, ~mainBassLayers[0], 0.5);
+	signal2 = PlayBuf.ar(2, ~mainBassLayers[1], 0.5);
 
 	signal1 = signal1 * EnvGen.ar(
 		Env.new(
-			[0, 1, 0],
-			[~synthLoop.duration() - ~beat, ~beat / 2],
-			[6, -6],
-			0
-		),
-		gate1,
-		doneAction: 2
+			[0, 0, 0.5],
+			[~beat / 2, ~beat],
+			[0, -2]
+		)
 	);
 
 	signal2 = signal2 * EnvGen.ar(
 		Env.new(
-			[0, 1, 0],
-			[~synthLoop.duration() - ~beat, ~beat / 2],
-			[6, -6],
-			0
-		),
-		gate2,
-		doneAction: 2
+			[1, 1, 0.7],
+			[(~beat / 2), ~beat],
+			[0, -2]
+		)
 	);
 
-	signal3 = signal3 * EnvGen.ar(
-		Env.new(
-			[0, 1, 0],
-			[~synthLoop.duration() - ~beat, ~beat / 2],
-			[6, -6],
-			0
-		),
-		gate3,
-		doneAction: 2
-	);
-
-	signal4 = signal4 * EnvGen.ar(
-		Env.new(
-			[0, 1, 0],
-			[~synthLoop.duration() - ~beat, ~beat / 2],
-			[6, -6],
-			0
-		),
-		gate4,
-		doneAction: 2
-	);
-
-	signal1 = signal1 + signal2 + signal3 + signal4;
+	signal1 = signal1 + signal2;
+	signal1 = signal1 * (-10.dbamp());
 
 	signal1 = signal1 * EnvGen.ar(
 		Env.new(
 			[1, 1, 0],
-			[~synthLoop.duration() - 0.05, 0.05]
-		)
+			[~beat + (~beat / 2), 0.2],
+			[1]
+		),
+		doneAction: 2
 	);
 
 	Out.ar(0, signal1);
 }).add();
 
-~a1 = {
+SynthDef(\bassLayer2, {
+
+	var signal;
+	signal = PlayBuf.ar(2, ~mainBassLayers[2]);
+
+	signal = signal * EnvGen.ar(
+		Env.new(
+			[0.05, 1],
+			[0.3],
+			[0]
+		)
+	);
+
+	signal = signal * (-5.dbamp());
+	signal = signal * EnvGen.ar(
+		Env.new(
+			[1, 1, 0],
+			[~beat + (~beat / 2), 0.2],
+			[1]
+		),
+		doneAction: 2
+	);
+
+	Out.ar(0, signal);
+}).add();
+
+~bassFills.do({
+
+	arg buffer, index;
+
+	SynthDef(\bassFill ++ (index + 1).asString(), {
+
+		arg attack = 0, release = 0, gate = 1, startPos = 0, rate = 1;
+		var signal;
+
+		signal = PlayBuf.ar(2, ~bassFills[index], rate, startPos: s.sampleRate() * startPos, doneAction: 2);
+
+		signal = signal * EnvGen.ar(
+			Env.new(
+				[0, 1, 0],
+				[attack, release],
+				[0, 0],
+				1
+			),
+			gate,
+			doneAction: 2
+		);
+
+		Out.ar(0, signal);
+	}).add();
+});
+
+~p1 = {
 
 	arg repetitions = 1, fill = false, fillVariation = 1;
 
@@ -214,16 +299,15 @@ SynthDef(\loopVariationPlay, {
 				{
 					var synth1, synth2;
 
-					synth1 = Synth.new(\synthLoopPlay, target: ~mainGroup);
-					synth2 = Synth.new(\loopVariationPlay, target: ~mainGroup);
+					synth1 = Synth.new(\synthLoop, target: ~mainGroup);
+					synth2 = Synth.new(\loopVariation ++ fillVariation.asString(), target: ~mainGroup);
 
 					(~beat / 2).wait();
 
 					synth1.set(\gate, 0);
-					synth2.set(\gate ++ fillVariation.asString(), 0);
 				},
 				{
-					Synth.new(\synthLoopPlay, target: ~mainGroup);
+					Synth.new(\synthLoop, target: ~mainGroup);
 					(~beat * 8).wait();
 				}
 			);
@@ -231,9 +315,28 @@ SynthDef(\loopVariationPlay, {
 	}).play();
 };
 
-~seq = [{ ~a1.value(1, true) }, \, \, \, \, \, \, \];
-~seq = ~seq ++ [{ ~a1.value(1, true, 2) }, \, \, \, \, \, \, \];
-~seq = ~seq ++ [{ ~a1.value(1, true, 3) }, \, \, \, \, \, \, \];
-~seq = ~seq ++ [{ ~a1.value(1, true, 4) }, \, \, \, \, \, \, \];
+~p2 = {
+
+	Routine({
+
+		var synth;
+
+		Synth(\bassLayer2, target: ~mainGroup);
+		Synth(\bassLayer1, target: ~mainGroup);
+
+		(~beat * 3).wait();
+
+		synth = Synth(\bassFill3, [\startPos, 0.6, \attack, 0.2, \release, 0.1], target: ~mainGroup);
+
+		(~beat).wait();
+
+		synth.set(\gate, 0);
+	}).play();
+};
+
+~seq = [{ ~p1.value(1, true, 1) }, \, \, \, \, \, \, \];
+~seq2 = [{ ~p2.value(); }, \, \, \];
 ~player.value(~seq, ~beat, true);
+~player.value(~seq2, ~beat, true);
 )
+
